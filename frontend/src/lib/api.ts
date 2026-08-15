@@ -6,7 +6,7 @@ import type {
   SentimentResponse,
 } from './types';
 
-const BASE_URL = '/api';
+const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export async function fetchHealth(): Promise<{ status: string; message: string }> {
   const res = await fetch(`${BASE_URL}/health`);
