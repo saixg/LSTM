@@ -84,4 +84,5 @@ What was built:
 - Added subword suffix stemming resolution (`resolve_token`) in `sentiment.py` for unseen word derivations.
 - Verified on arbitrary real-world English sentences: 100% correct classification with real PyTorch `ExposedLSTMCell` gate telemetry.
 - Integrated API Ninjas Sentiment API as a concurrent Cloud Oracle Benchmark in `sentiment.py` and `SentimentClassifier.tsx`, displaying live dual-engine validation alongside per-token gate activation telemetry.
+- Configured production `.gitignore`, crafted comprehensive `README.md`, staged structured commits, and pushed all code to https://github.com/saixg/LSTM.git (branch `main`).
 
