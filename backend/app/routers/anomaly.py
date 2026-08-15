@@ -1,15 +1,13 @@
 import os
 import json
-import torch
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List
 from ..schemas import GateStep
-from ..models.anomaly_model import AnomalyAutoencoder
+from ..models.fast_lstm_engine import FastAnomalyModel
 
 router = APIRouter(prefix="/api/anomaly", tags=["anomaly"])
 
-# Global state to hold the model and samples so we don't load them on every request
 MODEL = None
 SAMPLES = []
 
@@ -27,11 +25,24 @@ class AnomalyDetectResponse(BaseModel):
 def get_model():
     global MODEL
     if MODEL is None:
-        model_path = os.path.join(os.path.dirname(__file__), "..", "checkpoints", "anomaly_model.pt")
-        MODEL = AnomalyAutoencoder(input_size=1, hidden_size=32)
-        if os.path.exists(model_path):
-            MODEL.load_state_dict(torch.load(model_path, weights_only=True))
-        MODEL.eval()
+        checkpoint_dir = os.path.join(os.path.dirname(__file__), "..", "checkpoints")
+        weights_path = os.path.join(checkpoint_dir, "anomaly_weights.json")
+        if os.path.exists(weights_path):
+            with open(weights_path, "r") as f:
+                weights = json.load(f)
+            MODEL = FastAnomalyModel(weights)
+        else:
+            try:
+                import torch
+                from ..models.anomaly_model import AnomalyAutoencoder
+                model_path = os.path.join(checkpoint_dir, "anomaly_model.pt")
+                pt_model = AnomalyAutoencoder(input_size=1, hidden_size=32)
+                if os.path.exists(model_path):
+                    pt_model.load_state_dict(torch.load(model_path, weights_only=True))
+                pt_model.eval()
+                MODEL = pt_model
+            except Exception:
+                pass
     return MODEL
 
 def get_samples():
@@ -55,23 +66,22 @@ def detect_anomaly(req: AnomalyDetectRequest):
     
     sequence = list(sample["data"])
     if req.inject_anomaly:
-        # Inject artificial anomaly spike in the middle
         mid = len(sequence) // 2
         for t in range(mid, mid + 5):
             sequence[t] += 2.0
             
-    # Prepare tensor
-    x = torch.tensor(sequence, dtype=torch.float32).unsqueeze(1) # (seq_len, 1)
-    
     model = get_model()
-    with torch.no_grad():
-        reconstructed, steps = model(x)
+    
+    if isinstance(model, FastAnomalyModel):
+        reconstructed_list, steps = model.forward(sequence)
+    else:
+        import torch
+        x = torch.tensor(sequence, dtype=torch.float32).unsqueeze(1)
+        with torch.no_grad():
+            reconstructed, steps = model(x)
+        reconstructed_list = [float(v) for v in reconstructed.view(-1).tolist()]
         
-    reconstructed_list = [float(v) for v in reconstructed.view(-1).tolist()]
-    
     error = [float((sequence[i] - reconstructed_list[i])**2) for i in range(len(sequence))]
-    
-    # Simple threshold
     threshold = 0.5
     anomaly_flags = [bool(e > threshold) for e in error]
     

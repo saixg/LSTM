@@ -1,4 +1,3 @@
-import torch
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List
@@ -16,7 +15,6 @@ class ExplainerTraceResponse(BaseModel):
 
 @router.post("/trace", response_model=ExplainerTraceResponse)
 def trace_explainer(req: ExplainerTraceRequest):
-    # We reuse the NextWord model to generate a valid trace for the explainer UI
     nextword.load_model()
     
     words = req.text.lower().split()
@@ -24,12 +22,14 @@ def trace_explainer(req: ExplainerTraceRequest):
         return ExplainerTraceResponse(tokens=[], steps=[])
         
     encoded = [nextword.VOCAB.get(w, nextword.VOCAB["<UNK>"]) for w in words]
-    x = torch.tensor(encoded, dtype=torch.long)
     
+    if isinstance(nextword.MODEL, nextword.FastNextWordModel):
+        _, steps = nextword.MODEL.forward(encoded, tokens=words)
+        return ExplainerTraceResponse(tokens=words, steps=steps)
+        
+    import torch
+    x = torch.tensor(encoded, dtype=torch.long)
     with torch.no_grad():
         _, steps = nextword.MODEL(x, tokens=words)
         
-    return ExplainerTraceResponse(
-        tokens=words,
-        steps=steps
-    )
+    return ExplainerTraceResponse(tokens=words, steps=steps)
